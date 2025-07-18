@@ -1,0 +1,62 @@
+{
+  "family": "$TASK_DEFINITION_NAME",
+  "networkMode": "awsvpc",
+  "taskRoleArn": "$TASK_ROLE",
+  "executionRoleArn": "$TASK_EXECUTION_ROLE",
+  "containerDefinitions": [
+    {
+      "name": "everfit-devops-test-service",
+      "image": "<IMAGE1_NAME>",
+      "portMappings": [
+        {
+          "hostPort": $API_PORT,
+          "protocol": "tcp",
+          "containerPort": $API_PORT
+        }
+      ],
+      "essential": true,
+      "command": ["bash", "-c", "ls -al && /bin/bash run.sh"],
+      "ulimits": [
+        {
+          "name": "nofile",
+          "softLimit": 1024000,
+          "hardLimit": 1024000
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "$AWS_CLOUD_WATCH_GROUP",
+          "awslogs-region": "ap-southeast-1",
+          "awslogs-create-group": "true",
+          "awslogs-stream-prefix": "demo-devops"
+        }
+      },
+      "secrets": [
+        {
+          "name": "APP_ENV",
+          "valueFrom": "$SSM_SECRET_ARN/global/$STAGE/APP_ENV"
+        }
+      ]
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "$CONTAINER_CPU",
+  "memory": "$CONTAINER_RAM",
+  "runParams": {
+    "networkConfiguration": {
+      "awsvpcConfiguration": {
+        "subnets": [
+          "$SUBNET_ISOLATION_AZ_A",
+          "$SUBNET_ISOLATION_AZ_B"
+        ],
+        "securityGroups": [
+          "$SECURITY_GROUP_ISOLATION_ID"
+        ],
+        "assignPublicIp": "DISABLED"
+      }
+    }
+  }
+}

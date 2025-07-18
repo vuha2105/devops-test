@@ -1,0 +1,64 @@
+version: 0.2
+
+env:
+  secrets-manager:
+    AWS_REGION: $AWS_SECRET_ARN:AWS_REGION
+    AWS_ECR_REPOSITORY_URL: $AWS_SECRET_ARN:AWS_ECR_REPOSITORY_URL
+    TASK_DEFINITION_NAME: $AWS_SECRET_ARN:TASK_EMR_DEFINITION_NAME
+    CONTAINER_CPU: $AWS_SECRET_ARN:CONTAINER_CPU
+    CONTAINER_RAM: $AWS_SECRET_ARN:CONTAINER_RAM
+    TASK_EXECUTION_ROLE: $AWS_SECRET_ARN:TASK_EXECUTION_ROLE
+    TASK_ROLE: $AWS_SECRET_ARN:TASK_ROLE
+    AWS_ECR_IMAGE_TAG: $AWS_SECRET_ARN:AWS_ECR_IMAGE_TAG
+    SUBNET_ISOLATION_AZ_A: $AWS_SECRET_ARN:SUBNET_ISOLATION_AZ_A
+    SUBNET_ISOLATION_AZ_B: $AWS_SECRET_ARN:SUBNET_ISOLATION_AZ_B
+    SECURITY_GROUP_ISOLATION_ID: $AWS_SECRET_ARN:SECURITY_GROUP_ISOLATION_ID
+    NODE_ENV: $AWS_SECRET_ARN:NODE_ENV
+    AWS_CLOUD_WATCH_GROUP: $AWS_SECRET_ARN:AWS_EMR_CLOUD_WATCH_GROUP
+    API_PORT: $AWS_SECRET_ARN:DEVOPS_CONTAINER_PORT
+    SSM_SECRET_ARN: $AWS_SECRET_ARN:SSM_SECRET_ARN
+
+phases:
+  install:
+    commands:
+      - echo "Installing Python 3.12.5 via pyenv..."
+      - pyenv install 3.12.5
+      - pyenv global 3.12.5
+      - python --version
+      - pip install --no-cache-dir poetry
+
+  pre_build:
+    commands:
+      - echo "Generating appspec.yml and taskdef.json from templates..."
+      - envsubst < appspec_template.yml > appspec.yml
+      - envsubst < taskdef_template.json > taskdef.json
+
+      - echo "Installing Python dependencies for testing..."
+      - poetry install --no-root --no-interaction
+
+      - echo "Running unit tests..."
+      - poetry run pytest tests/
+
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ECR_REPOSITORY_URL}
+
+  build:
+    commands:
+      - echo "Building Docker image..."
+      - docker build --pull --build-arg NODE_ENV=$NODE_ENV -t ${AWS_ECR_REPOSITORY_URL}:${AWS_ECR_IMAGE_TAG} .
+
+      - echo "Tagging image with source version..."
+      - docker tag ${AWS_ECR_REPOSITORY_URL}:${AWS_ECR_IMAGE_TAG} ${AWS_ECR_REPOSITORY_URL}:${CODEBUILD_RESOLVED_SOURCE_VERSION}
+
+      - echo "Pushing Docker images to ECR..."
+      - docker push ${AWS_ECR_REPOSITORY_URL}:${AWS_ECR_IMAGE_TAG}
+      - docker push ${AWS_ECR_REPOSITORY_URL}:${CODEBUILD_RESOLVED_SOURCE_VERSION}
+
+      - echo "Generating imageDetail.json..."
+      - printf '{"ImageURI":"%s"}' ${AWS_ECR_REPOSITORY_URL}:${AWS_ECR_IMAGE_TAG} > imageDetail.json
+
+artifacts:
+  files:
+    - appspec.yml
+    - taskdef.json
+    - imageDetail.json
